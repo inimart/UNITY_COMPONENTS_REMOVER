@@ -16,6 +16,11 @@ public class ComponentsRemover : EditorWindow
     private Component componentToRemove = null;
     private GameObject componentOwner = null;
     private System.Type typeToRemove = null;
+    private string filterComponents = "";
+    
+    // Special grouped types
+    private static readonly System.Type COLLIDER_GROUP = typeof(Collider);
+    private static readonly System.Type CUSTOM_MONOBEHAVIOUR_GROUP = typeof(MonoBehaviour);
 
     [MenuItem("Tools/Components Remover")]
     public static void ShowWindow()
@@ -108,7 +113,7 @@ public class ComponentsRemover : EditorWindow
             EditorGUILayout.Space(5);
             
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            typesScrollPosition = EditorGUILayout.BeginScrollView(typesScrollPosition, GUILayout.MaxHeight(150));
+            typesScrollPosition = EditorGUILayout.BeginScrollView(typesScrollPosition, GUILayout.MinHeight(200), GUILayout.MaxHeight(250));
             
             foreach (var kvp in componentTypeCounts.OrderBy(x => x.Key.Name))
             {
@@ -123,12 +128,13 @@ public class ComponentsRemover : EditorWindow
                     GUILayout.Label(icon, GUILayout.Width(20), GUILayout.Height(20));
                 }
                 
-                EditorGUILayout.LabelField($"{type.Name} ({count})", GUILayout.ExpandWidth(true));
+                string typeName = GetGroupedTypeName(type);
+                EditorGUILayout.LabelField($"{typeName} ({count})", GUILayout.ExpandWidth(true));
                 
                 if (GUILayout.Button("Remove all of this type", GUILayout.Width(150)))
                 {
                     if (EditorUtility.DisplayDialog("Remove All Components of Type", 
-                        $"Are you sure you want to remove ALL {type.Name} components from all GameObjects under {rootGO.name}?", 
+                        $"Are you sure you want to remove ALL {typeName} components from all GameObjects under {rootGO.name}?", 
                         "Yes", "No"))
                     {
                         typeToRemove = type;
@@ -148,6 +154,18 @@ public class ComponentsRemover : EditorWindow
         if (gameObjectComponents.Count > 0)
         {
             EditorGUILayout.LabelField($"Found {gameObjectComponents.Count} GameObjects with components:", EditorStyles.boldLabel);
+            
+            // Filter components field
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Filter Components:", GUILayout.Width(100));
+            filterComponents = EditorGUILayout.TextField(filterComponents, GUILayout.ExpandWidth(true));
+            if (GUILayout.Button("Clear", GUILayout.Width(50)))
+            {
+                filterComponents = "";
+                GUI.FocusControl(null);
+            }
+            EditorGUILayout.EndHorizontal();
+            
             EditorGUILayout.Space(5);
             
             scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
@@ -158,6 +176,27 @@ public class ComponentsRemover : EditorWindow
                 List<Component> components = kvp.Value;
                 
                 if (go == null) continue;
+                
+                // Check if this GameObject should be displayed based on filter
+                if (!string.IsNullOrEmpty(filterComponents))
+                {
+                    bool hasMatchingComponent = false;
+                    foreach (Component comp in components)
+                    {
+                        if (comp != null && !(comp is Transform))
+                        {
+                            string componentName = comp.GetType().Name.ToLower();
+                            if (componentName.StartsWith(filterComponents.ToLower()))
+                            {
+                                hasMatchingComponent = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (!hasMatchingComponent)
+                        continue;
+                }
                 
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
                 
@@ -176,6 +215,14 @@ public class ComponentsRemover : EditorWindow
                     Component comp = components[i];
                     if (comp == null || comp is Transform) continue;
                     
+                    // Highlight matching components
+                    string componentName = comp.GetType().Name;
+                    bool isMatching = string.IsNullOrEmpty(filterComponents) || 
+                                    componentName.ToLower().StartsWith(filterComponents.ToLower());
+                    
+                    if (!isMatching)
+                        continue;
+                    
                     EditorGUILayout.BeginHorizontal();
                     
                     Texture icon = GetComponentIcon(comp.GetType());
@@ -184,7 +231,7 @@ public class ComponentsRemover : EditorWindow
                         GUILayout.Label(icon, GUILayout.Width(20), GUILayout.Height(20));
                     }
                     
-                    EditorGUILayout.LabelField(comp.GetType().Name);
+                    EditorGUILayout.LabelField(componentName);
                     
                     if (GUILayout.Button("X", GUILayout.Width(25)))
                     {
@@ -243,13 +290,15 @@ public class ComponentsRemover : EditorWindow
                 {
                     nonTransformComponents.Add(comp);
                     
-                    // Count component types
+                    // Count component types with grouping
                     System.Type compType = comp.GetType();
-                    if (!componentTypeCounts.ContainsKey(compType))
+                    System.Type typeKey = GetGroupedType(compType);
+                    
+                    if (!componentTypeCounts.ContainsKey(typeKey))
                     {
-                        componentTypeCounts[compType] = 0;
+                        componentTypeCounts[typeKey] = 0;
                     }
-                    componentTypeCounts[compType]++;
+                    componentTypeCounts[typeKey]++;
                 }
             }
             
@@ -358,7 +407,7 @@ public class ComponentsRemover : EditorWindow
         
         List<Component> componentsToRemove = new List<Component>();
         
-        // Collect all components of the specified type
+        // Collect all components of the specified type or group
         foreach (var kvp in gameObjectComponents)
         {
             GameObject go = kvp.Key;
@@ -366,9 +415,30 @@ public class ComponentsRemover : EditorWindow
             
             foreach (Component comp in components)
             {
-                if (comp != null && comp.GetType() == typeToRemove)
+                if (comp != null)
                 {
-                    componentsToRemove.Add(comp);
+                    bool shouldRemove = false;
+                    
+                    if (typeToRemove == COLLIDER_GROUP)
+                    {
+                        // Remove all types of colliders
+                        shouldRemove = comp is Collider;
+                    }
+                    else if (typeToRemove == CUSTOM_MONOBEHAVIOUR_GROUP)
+                    {
+                        // Remove all custom MonoBehaviours
+                        shouldRemove = IsCustomMonoBehaviour(comp.GetType());
+                    }
+                    else
+                    {
+                        // Remove exact type match
+                        shouldRemove = comp.GetType() == typeToRemove;
+                    }
+                    
+                    if (shouldRemove)
+                    {
+                        componentsToRemove.Add(comp);
+                    }
                 }
             }
         }
@@ -413,5 +483,56 @@ public class ComponentsRemover : EditorWindow
                 }
             }
         }
+    }
+    
+    private System.Type GetGroupedType(System.Type type)
+    {
+        // Group all colliders together
+        if (type.IsSubclassOf(typeof(Collider)) || type == typeof(Collider))
+        {
+            return COLLIDER_GROUP;
+        }
+        
+        // Group all custom MonoBehaviours together
+        if (IsCustomMonoBehaviour(type))
+        {
+            return CUSTOM_MONOBEHAVIOUR_GROUP;
+        }
+        
+        // Return the original type for built-in components
+        return type;
+    }
+    
+    private string GetGroupedTypeName(System.Type type)
+    {
+        if (type == COLLIDER_GROUP)
+        {
+            return "All Colliders";
+        }
+        else if (type == CUSTOM_MONOBEHAVIOUR_GROUP)
+        {
+            return "Custom Scripts";
+        }
+        else
+        {
+            return type.Name;
+        }
+    }
+    
+    private bool IsCustomMonoBehaviour(System.Type type)
+    {
+        // Check if it's a MonoBehaviour but not a built-in Unity component
+        if (!type.IsSubclassOf(typeof(MonoBehaviour)))
+        {
+            return false;
+        }
+        
+        // Get the assembly name
+        string assemblyName = type.Assembly.GetName().Name;
+        
+        // Unity's built-in components are in UnityEngine assemblies
+        return !assemblyName.StartsWith("UnityEngine") && 
+               !assemblyName.StartsWith("Unity.") &&
+               !assemblyName.StartsWith("UnityEditor");
     }
 }
