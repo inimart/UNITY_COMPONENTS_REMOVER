@@ -1,17 +1,21 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using System.Linq;
 
 public class ComponentsRemover : EditorWindow
 {
     private GameObject rootGO;
     private Dictionary<GameObject, List<Component>> gameObjectComponents = new Dictionary<GameObject, List<Component>>();
+    private Dictionary<System.Type, int> componentTypeCounts = new Dictionary<System.Type, int>();
     private Vector2 scrollPosition;
+    private Vector2 typesScrollPosition;
     private GUIStyle componentLabelStyle;
     private Dictionary<System.Type, Texture> componentIcons = new Dictionary<System.Type, Texture>();
     private bool needsRefresh = false;
     private Component componentToRemove = null;
     private GameObject componentOwner = null;
+    private System.Type typeToRemove = null;
 
     [MenuItem("Tools/Components Remover")]
     public static void ShowWindow()
@@ -58,6 +62,11 @@ public class ComponentsRemover : EditorWindow
                 componentToRemove = null;
                 componentOwner = null;
             }
+            else if (typeToRemove != null)
+            {
+                RemoveAllComponentsOfType(typeToRemove);
+                typeToRemove = null;
+            }
             needsRefresh = false;
             FindAllScripts();
         }
@@ -91,6 +100,50 @@ public class ComponentsRemover : EditorWindow
         EditorGUI.EndDisabledGroup();
         
         EditorGUILayout.Space(10);
+        
+        // Display unique component types
+        if (componentTypeCounts.Count > 0)
+        {
+            EditorGUILayout.LabelField($"Unique Component Types ({componentTypeCounts.Count}):", EditorStyles.boldLabel);
+            EditorGUILayout.Space(5);
+            
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            typesScrollPosition = EditorGUILayout.BeginScrollView(typesScrollPosition, GUILayout.MaxHeight(150));
+            
+            foreach (var kvp in componentTypeCounts.OrderBy(x => x.Key.Name))
+            {
+                System.Type type = kvp.Key;
+                int count = kvp.Value;
+                
+                EditorGUILayout.BeginHorizontal();
+                
+                Texture icon = GetComponentIcon(type);
+                if (icon != null)
+                {
+                    GUILayout.Label(icon, GUILayout.Width(20), GUILayout.Height(20));
+                }
+                
+                EditorGUILayout.LabelField($"{type.Name} ({count})", GUILayout.ExpandWidth(true));
+                
+                if (GUILayout.Button("Remove all of this type", GUILayout.Width(150)))
+                {
+                    if (EditorUtility.DisplayDialog("Remove All Components of Type", 
+                        $"Are you sure you want to remove ALL {type.Name} components from all GameObjects under {rootGO.name}?", 
+                        "Yes", "No"))
+                    {
+                        typeToRemove = type;
+                        needsRefresh = true;
+                    }
+                }
+                
+                EditorGUILayout.EndHorizontal();
+            }
+            
+            EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndVertical();
+            
+            EditorGUILayout.Space(10);
+        }
         
         if (gameObjectComponents.Count > 0)
         {
@@ -170,6 +223,7 @@ public class ComponentsRemover : EditorWindow
     private void FindAllScripts()
     {
         gameObjectComponents.Clear();
+        componentTypeCounts.Clear();
         
         if (rootGO == null) return;
         
@@ -188,6 +242,14 @@ public class ComponentsRemover : EditorWindow
                 if (comp != null && !(comp is Transform))
                 {
                     nonTransformComponents.Add(comp);
+                    
+                    // Count component types
+                    System.Type compType = comp.GetType();
+                    if (!componentTypeCounts.ContainsKey(compType))
+                    {
+                        componentTypeCounts[compType] = 0;
+                    }
+                    componentTypeCounts[compType]++;
                 }
             }
             
@@ -288,5 +350,68 @@ public class ComponentsRemover : EditorWindow
     {
         RequireComponent[] attrs = (RequireComponent[])type.GetCustomAttributes(typeof(RequireComponent), true);
         return attrs.Length > 0;
+    }
+
+    private void RemoveAllComponentsOfType(System.Type typeToRemove)
+    {
+        if (rootGO == null || typeToRemove == null) return;
+        
+        List<Component> componentsToRemove = new List<Component>();
+        
+        // Collect all components of the specified type
+        foreach (var kvp in gameObjectComponents)
+        {
+            GameObject go = kvp.Key;
+            List<Component> components = kvp.Value;
+            
+            foreach (Component comp in components)
+            {
+                if (comp != null && comp.GetType() == typeToRemove)
+                {
+                    componentsToRemove.Add(comp);
+                }
+            }
+        }
+        
+        // Remove all collected components
+        foreach (Component comp in componentsToRemove)
+        {
+            if (comp != null)
+            {
+                GameObject go = comp.gameObject;
+                
+                // Check if this component is required by others
+                Component[] allComponents = go.GetComponents<Component>();
+                bool canRemove = true;
+                
+                foreach (Component otherComp in allComponents)
+                {
+                    if (otherComp == null || otherComp == comp) continue;
+                    
+                    System.Type compType = otherComp.GetType();
+                    RequireComponent[] requireAttributes = (RequireComponent[])compType.GetCustomAttributes(typeof(RequireComponent), true);
+                    
+                    foreach (RequireComponent req in requireAttributes)
+                    {
+                        if ((req.m_Type0 != null && req.m_Type0 == typeToRemove) ||
+                            (req.m_Type1 != null && req.m_Type1 == typeToRemove) ||
+                            (req.m_Type2 != null && req.m_Type2 == typeToRemove))
+                        {
+                            canRemove = false;
+                            Debug.LogWarning($"Cannot remove {typeToRemove.Name} from {go.name} because it is required by {compType.Name}");
+                            break;
+                        }
+                    }
+                    
+                    if (!canRemove) break;
+                }
+                
+                if (canRemove)
+                {
+                    Undo.RecordObject(go, $"Remove {typeToRemove.Name}");
+                    DestroyImmediate(comp);
+                }
+            }
+        }
     }
 }
