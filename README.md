@@ -2,7 +2,7 @@
 
 A Unity Editor tool for removing components from GameObjects in the scene hierarchy.
 
-![](file:///H:/Projects3/UNITY_TOOLS/COMPONENTS_REMOVER/imgs/ComponentsRemover.png)
+![](./imgs/ComponentsRemover.png)
 
 ## How to Open
 
