@@ -1,0 +1,25 @@
+{
+  "name": "com.inimart.componentsremover",
+  "version": "1.0.0",
+  "displayName": "Components Remover",
+  "description": "A Unity Editor tool for efficiently removing components from GameObjects in bulk. Provides a visual interface to identify, filter, and remove components from entire GameObject hierarchies with safety checks for required dependencies.",
+  "unity": "2020.3",
+  "documentationUrl": "",
+  "changelogUrl": "",
+  "licensesUrl": "",
+  "keywords": [
+    "components",
+    "cleanup",
+    "optimization",
+    "editor",
+    "tools",
+    "hierarchy"
+  ],
+  "author": {
+    "name": "Inimart",
+    "email": "",
+    "url": ""
+  },
+  "type": "tool",
+  "samples": []
+}

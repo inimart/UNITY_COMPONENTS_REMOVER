@@ -3,7 +3,9 @@ using UnityEditor;
 using System.Collections.Generic;
 using System.Linq;
 
-public class ComponentsRemover : EditorWindow
+namespace Inimart.ComponentsRemover.Editor
+{
+    public class ComponentsRemover : EditorWindow
 {
     private GameObject rootGO;
     private Dictionary<GameObject, List<Component>> gameObjectComponents = new Dictionary<GameObject, List<Component>>();
@@ -535,4 +537,5 @@ public class ComponentsRemover : EditorWindow
                !assemblyName.StartsWith("Unity.") &&
                !assemblyName.StartsWith("UnityEditor");
     }
+}
 }
